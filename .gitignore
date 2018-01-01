@@ -1,0 +1,4 @@
+/@eaDir
+.idea
+.data/*
+.checkpoints/*

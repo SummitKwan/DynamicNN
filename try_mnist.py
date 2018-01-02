@@ -8,12 +8,13 @@ import matplotlib.pyplot as plt
 import sklearn.preprocessing as preprocess
 import tensorflow as tf
 import utils
-from utils import load_data, data_unravel
+
+
 
 """ load and plot mnist data """
 
 # load nmist data
-(X_dtr, y_dtr), (X_dvl, y_dvl), (X_dts, y_dts) = load_data()
+(X_dtr, y_dtr), (X_dvl, y_dvl), (X_dts, y_dts) = utils.load_data()
 
 # one hot encoding of labels
 ohe = preprocess.OneHotEncoder(sparse=False)
@@ -27,7 +28,23 @@ importlib.reload(utils)
 h_fig, h_ax = plt.subplots(nrows=4, ncols=5)
 for ax in h_ax.ravel():
     plt.axes(ax)
-    utils.data_plot(X_train, y_train)
+    utils.data_plot(X_dtr, y_dtr)
+
+# get augmented data: horizontal flip
+X_dtr_flip = utils.data_ravel(utils.data_unravel(X_dtr)[:, :, ::-1])
+
+importlib.reload(utils)
+h_fig, h_ax = plt.subplots(nrows=4, ncols=5)
+for ax in h_ax.ravel():
+    plt.axes(ax)
+    utils.data_plot(X_dtr_flip, y_dtr)
+
+X_dtr_all = np.concatenate((X_dtr, X_dtr_flip), axis=0)
+Y_dtr_all = np.concatenate((Y_dtr, Y_dtr), axis=0)
+
+indx_reorder = np.random.permutation(X_dtr_all.shape[0])
+X_dtr_all = X_dtr_all[indx_reorder]
+Y_dtr_all = Y_dtr_all[indx_reorder]
 
 """ use tensorflow to classify, based on Udacity DeepLearning course assignment 3 """
 def accuracy(predictions, labels):
@@ -178,3 +195,109 @@ plt.legend([h_H0, h_H1, h_H0_rot, h_H1_rot], ['H0_fam', 'H1_fam', 'H0_nov', 'H1_
 plt.title('MLP: ave tuning curve of hidden layer activity')
 plt.savefig('./figures/MLP_ave_tuning_curve.pdf')
 plt.savefig('./figures/MLP_ave_tuning_curve.png')
+
+
+
+""" traning session with flipped images """
+num_steps = 10001
+N_all = X_dtr_all.shape[0]
+step_plot = []
+acc_tr = []
+acc_vl = []
+loss_tr = []
+
+with tf.Session(graph=graph) as session:
+    # initilize variables
+    tf.global_variables_initializer().run()
+
+    for step in range(num_steps):
+        # get batch data
+        if step<5001:
+            offset = (step * size_batch) % (N_all - size_batch)
+            X_batch = X_dtr_all[offset:offset + size_batch, :]
+            Y_batch = Y_dtr_all[offset:offset + size_batch, :]
+        else:
+            offset = (step * size_batch) % (N - size_batch)
+            X_batch = X_dtr[offset:offset + size_batch, :]
+            Y_batch = Y_dtr[offset:offset + size_batch, :]
+        feed_dict = {X_tr: X_batch, Y_tr: Y_batch}
+        [_, l, predictions] = session.run([optimizer, loss, Y_tr_hat], feed_dict=feed_dict)
+        if (step % 500 == 0):
+            step_plot.append(step)
+            loss_tr.append(l)
+            acc_tr.append(accuracy(predictions, Y_batch))
+            acc_vl.append(accuracy(Y_vl_hat.eval(), Y_dvl))
+            print("Minibatch loss at step %d: %f" % (step, l))
+            print("Minibatch accuracy: %.1f%%" % accuracy(predictions, Y_batch))
+            print("Validation accuracy: %.1f%%" % accuracy(Y_vl_hat.eval(), Y_dvl))
+    print("Test accuracy: %.1f%%" % accuracy(Y_ts_hat.eval(), Y_dts))
+    saver.save(session, './checkpoints/mnist_4L_with_flip.ckpt')
+
+# plot
+plt.subplot(2, 1, 1)
+plt.plot(step_plot, loss_tr)
+plt.title('training loss')
+plt.subplot(2, 1, 2)
+plt.plot(step_plot, acc_tr)
+plt.plot(step_plot, acc_vl)
+plt.legend(['train', 'validate'])
+plt.title('accuracty')
+
+
+X_dvl_rot = utils.data_ravel((np.rot90(utils.data_unravel(X_dvl), k=1, axes=[1,2])))
+X_dvl_flp = utils.data_ravel(utils.data_unravel(X_dvl)[:, :, ::-1])
+
+with tf.Session(graph=graph) as session:
+    saver.restore(session, './checkpoints/mnist_4L_with_flip.ckpt')
+    aH0_vl = H0_vl.eval()
+    aH1_vl = H1_vl.eval()
+
+    X_vl_rot = tf.constant(X_dvl_rot)
+    H0_vl_rot = XtoH0(X_vl_rot)
+    H1_vl_rot = H0toH1(H0_vl_rot)
+    aH0_vl_rot = H0_vl_rot.eval()
+    aH1_vl_rot = H1_vl_rot.eval()
+
+    X_vl_flp = tf.constant(X_dvl_flp)
+    H0_vl_flp = XtoH0(X_vl_flp)
+    H1_vl_flp = H0toH1(H0_vl_flp)
+    aH0_vl_flp = H0_vl_flp.eval()
+    aH1_vl_flp = H1_vl_flp.eval()
+
+
+# tuning curve
+def cal_tuning(H):
+    tuning_H = np.vstack([np.sort(H[:, i])[::-1] for i in range(H.shape[1])])
+    mean_tuning_H = np.mean(tuning_H, axis=0)
+    q25_tuning_H = np.percentile(tuning_H, 25, axis=0)
+    q75_tuning_H = np.percentile(tuning_H, 75, axis=0)
+    return tuning_H, mean_tuning_H, q25_tuning_H, q75_tuning_H
+
+
+plt.figure()
+tuning_H0, mean_tuning_H0, q25_tuning_H0, q75_tuning_H0 = cal_tuning(aH0_vl)
+tuning_H1, mean_tuning_H1, q25_tuning_H1, q75_tuning_H1 = cal_tuning(aH1_vl)
+plt.fill_between(np.arange(tuning_H0.shape[1]), q25_tuning_H0, q75_tuning_H0, alpha=0.2)
+plt.fill_between(np.arange(tuning_H1.shape[1]), q25_tuning_H1, q75_tuning_H1, alpha=0.2)
+h_H0, = plt.plot(mean_tuning_H0)
+h_H1, = plt.plot(mean_tuning_H1)
+
+tuning_H0_flp, mean_tuning_H0_flp, q25_tuning_H0_flp, q75_tuning_H0_flp = cal_tuning(aH0_vl_flp)
+tuning_H1_flp, mean_tuning_H1_flp, q25_tuning_H1_flp, q75_tuning_H1_flp = cal_tuning(aH1_vl_flp)
+plt.fill_between(np.arange(tuning_H0_flp.shape[1]), q25_tuning_H0_flp, q75_tuning_H0_flp, alpha=0.2)
+plt.fill_between(np.arange(tuning_H1_flp.shape[1]), q25_tuning_H1_flp, q75_tuning_H1_flp, alpha=0.2)
+h_H0_flp, = plt.plot(mean_tuning_H0_flp)
+h_H1_flp, = plt.plot(mean_tuning_H1_flp)
+
+tuning_H0_rot, mean_tuning_H0_rot, q25_tuning_H0_rot, q75_tuning_H0_rot = cal_tuning(aH0_vl_rot)
+tuning_H1_rot, mean_tuning_H1_rot, q25_tuning_H1_rot, q75_tuning_H1_rot = cal_tuning(aH1_vl_rot)
+plt.fill_between(np.arange(tuning_H0_rot.shape[1]), q25_tuning_H0_rot, q75_tuning_H0_rot, alpha=0.2)
+plt.fill_between(np.arange(tuning_H1_rot.shape[1]), q25_tuning_H1_rot, q75_tuning_H1_rot, alpha=0.2)
+h_H0_rot, = plt.plot(mean_tuning_H0_rot)
+h_H1_rot, = plt.plot(mean_tuning_H1_rot)
+plt.legend([h_H0, h_H1, h_H0_flp, h_H1_flp, h_H0_rot, h_H1_rot], ['H0_fam', 'H1_fam', 'H0_nov', 'H1_nov', 'H0_non', 'H1_non'])
+plt.title('MLP: ave tuning curve of hidden layer activity')
+plt.savefig('./figures/MLP_ave_tuning_curve.pdf')
+plt.savefig('./figures/MLP_ave_tuning_curve.png')
+
+

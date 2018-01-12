@@ -87,6 +87,7 @@ def data_unravel(X, r=None):
 
     return X_img
 
+
 def data_ravel(X_img):
     """ reshape data to images: form  N*r*c to N*M """
     dim_X = 2
@@ -123,11 +124,33 @@ def data_plot(X, Y=None, i=None):
     :return: imshow handle
     """
 
-    N, M = X.shape
+    N = len(X)
+    dimX = len(X.shape)
+
     if i is None:
         i = np.random.randint(0, N, 1)[0]
-    h = plt.imshow(data_unravel(X[i]), cmap='gray')
+
+    if dimX == 2:
+        im = data_unravel(X[i])
+    elif dimX == 3:
+        im = X[i]
+    elif dimX == 4:
+        if X.shape[2] in (3, 4):
+            im = X[i]
+        else:
+            im = X[i, :, :, 0]
+    else:
+        raise Exception('input X dimension not allowed')
+    h = plt.imshow(im, cmap='gray')
     if Y is not None:
         plt.text(0.5, 1, Y[i], ha='center', va='bottom', fontsize='small', transform=plt.gca().transAxes)
     plt.axis('off')
     return h
+
+def auto_row_col(N, nrows = None):
+    """ automatically determine num rows and num_columns """
+    if nrows is None:
+        nrows = int(np.floor(np.sqrt(N)))
+    ncols, rem = divmod(N, nrows)
+    ncols = ncols + (rem>0)
+    return nrows, ncols

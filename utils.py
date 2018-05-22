@@ -113,22 +113,34 @@ def data_ravel(X_img):
     return X
 
 
-
-def data_plot(X, Y=None, i=None):
+def data_plot(X, Y=None, i=None, n=None):
     """
     plot a sample of data
 
     :param X: images, raveled, [N, M]
     :param Y: lables, N
-    :param i: index to plot, if None, randomly select one
+    :param i: index to plot, if None, randomly select one, if a list, plot all of them
+    :param n: defall to None, if not None, overwirtes i, plot N randomly selected examples
     :return: imshow handle
     """
 
     N = len(X)
     dimX = len(X.shape)
 
+    if n is not None:
+        i = np.random.randint(0, N, size=n)
+
     if i is None:
-        i = np.random.randint(0, N, 1)[0]
+        i = np.random.randint(0, N, size=1)[0]
+    elif np.size(i) > 1:
+        list_i = i
+        r, c = auto_row_col(n)
+        h_fig, h_axes = plt.subplots(r, c)
+        h_axes = np.ravel(h_axes)
+        for i_plot, i in enumerate(list_i):
+            plt.axes(h_axes[i_plot])
+            data_plot(X, Y, i)
+        return h_fig
 
     if dimX == 2:
         im = data_unravel(X[i])
@@ -147,10 +159,39 @@ def data_plot(X, Y=None, i=None):
     plt.axis('off')
     return h
 
-def auto_row_col(N, nrows = None):
+
+def auto_row_col(N, nrows=None):
     """ automatically determine num rows and num_columns """
     if nrows is None:
         nrows = int(np.floor(np.sqrt(N)))
     ncols, rem = divmod(N, nrows)
     ncols = ncols + (rem>0)
     return nrows, ncols
+
+
+def subplots_autorc(n=None, nrows=None, ncols=None,  **kwargs):
+    """
+    subplots either by specify nrows, ncols, or specify total number of panels
+    :param n:      total number of panels
+    :param nrows:  nrows, useful when n is not given
+    :param ncols:  nrows, useful when n is not given
+    :param kwargs:
+    :return:
+    """
+    if n is not None:
+        nrows, ncols = auto_row_col(n, nrows=nrows)
+    h_fig, h_axes = plt.subplots(nrows, ncols, **kwargs)
+    h_axes = np.ravel(h_axes)
+    return h_fig, h_axes
+
+
+def data_binarize(X, threshold=0.5, states='0,1'):
+    """ return binary form of data, either '0,1' or '-1,1' """
+
+    if states == '0,1':
+        return (X>threshold)*1
+    elif states == '-1,1':
+        return (X>threshold)*2-1
+
+
+

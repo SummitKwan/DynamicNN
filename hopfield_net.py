@@ -13,6 +13,7 @@ class HopfieldNet():
         initialize model
         :param m:  number of nodes in network
         """
+        self.parameters = ('m', 'W', 'b')
         self.m = m
         self.W = np.zeros([m, m])
         self.b = np.zeros([1, m])

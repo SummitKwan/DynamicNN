@@ -6,6 +6,7 @@ import os
 import gzip
 import six.moves.cPickle as pickle
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 def load_data(dataset = 'mnist.pkl.gz'):
@@ -193,6 +194,95 @@ def data_binarize(X, threshold=0.5, states='0,1'):
         return (X>threshold)*1
     elif states == '-1,1':
         return (X>threshold)*2-1
+
+
+def imshow_fast_subplot(data_list, layout=None, gap = 0.05,
+                    yn_nmlz = False, cmap='inferno'):
+    """
+    stick image data into a big image for fast subplot
+    :param data_list: 1D list of all images to plot
+    :param layout:    number of panels, or (nrow, ncol)
+    :param gap:       size of gap relative to penal size
+    :param yn_nmlz:   True/False to normalize data in every panel
+    :param cmap:      colormap to use
+    :return:
+    """
+
+    N_data = len(data_list)
+
+
+    if layout is None:             # if not give, set layout to be the number of data
+        layout = N_data
+    if np.array(layout).size==1:   # if is a single number, turn to [num_row, num_col]
+        ncol = int(np.ceil(np.sqrt(layout)))
+        nrow = int(np.ceil(1.0*layout/ncol))
+        layout = (nrow, ncol)
+    if np.array(layout).size == 2:
+        nrow, ncol = layout
+
+    plt.axes([0.00, 0.00, 1.00, 1.00])
+
+    """ get the sizes """
+    ny_mesh, nx_mesh = data_list[0].shape    # size of every panel
+    nx_gap = int(np.ceil(nx_mesh * gap))     # size of gap between panels
+    ny_gap = int(np.ceil(ny_mesh * gap))
+    nx_cell = nx_mesh+nx_gap                 # a cell is panel with gap
+    ny_cell = ny_mesh+ny_gap
+    nx_shift = nx_gap//2                     # shift the starting point of panel to be half the gap
+    ny_shift = ny_gap // 2
+    nx_canvas = (nx_mesh + nx_gap) * ncol    # size of canvas
+    ny_canvas = (ny_mesh + ny_gap) * nrow
+
+    # initialize the data for canvas
+    mesh_canvas = np.zeros([ny_canvas, nx_canvas])*np.nan
+    # contains the data for mask (create frames between panels)
+    mask_canvas = np.zeros([ny_canvas, nx_canvas])
+
+    """ normalize individual mesh plot to range [0,1] before putting them together """
+    if yn_nmlz:
+        for i in range(N_data):
+            cur_min = np.nanmin(data_list[i])
+            cur_max = np.nanmax(data_list[i])
+            data_list[i] = (data_list[i] - cur_min) / (cur_max - cur_min)
+
+    """ put mesh plot together into the big canvas matrix """
+    def indx_in_canvas(indx, rowcol='row', startend='start'):
+        # function to compute the index on cavas
+        if rowcol == 'row':
+            n_cell = ny_cell
+            n_shift  = ny_shift
+            n_mesh = ny_mesh
+        else:
+            n_cell = nx_cell
+            n_shift = nx_shift
+            n_mesh = nx_mesh
+        return indx * n_cell + n_shift + n_mesh * (startend=='end')
+
+
+    for i in range(N_data):
+        row = i // ncol    # row index of panel
+        col = i %  ncol    # col index of panel
+        # fill the mesh data of the panel in to the right location of canvas matrix for mesh plot
+        mesh_canvas[indx_in_canvas(row, 'row','start') : indx_in_canvas(row, 'row','end'),
+                    indx_in_canvas(col, 'col', 'start') : indx_in_canvas(col, 'col','end')] = data_list[i]
+        # fill value 1.0 to the pixels that contains mesh data in the canvas matrix for mask
+        mask_canvas[indx_in_canvas(row, 'row','start') : indx_in_canvas(row, 'row','end'),
+                    indx_in_canvas(col, 'col', 'start') : indx_in_canvas(col, 'col','end')] = 1
+
+    # create colormap for mask (transparent if 0.0, opaque if 1.0)
+    cmap_mask = mpl.colors.LinearSegmentedColormap.from_list('cmap_mask', [(0.9, 0.9, 0.9, 1.0), (0.9, 0.9, 0.9, 0.1)], N=2)
+
+    """ plot big matrix containing all mesh plots """
+    # # mesh data
+    plt.imshow(mesh_canvas, vmin=np.nanmin(mesh_canvas), vmax=np.nanmax(mesh_canvas), cmap=cmap, aspect='auto')
+    # # maks that forms the frames that seperates data panels
+    plt.imshow(mask_canvas, vmin=0, vmax=1, cmap=cmap_mask, aspect='auto')
+
+    """ make plot look better """
+    # set y axis direction in the imshwow format
+    ylim =np.array(plt.gca().get_ylim())
+    plt.gca().set_ylim( ylim.max(), ylim.min() )
+    plt.axis('off')
 
 
 

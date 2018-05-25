@@ -120,7 +120,7 @@ def data_plot(X, Y=None, i=None, n=None):
     :param X: images, raveled, [N, M]
     :param Y: lables, N
     :param i: index to plot, if None, randomly select one, if a list, plot all of them
-    :param n: defall to None, if not None, overwirtes i, plot N randomly selected examples
+    :param n: defalt to None, if not None, overwirtes i, plot N randomly selected examples
     :return: imshow handle
     """
 
@@ -134,6 +134,7 @@ def data_plot(X, Y=None, i=None, n=None):
         i = np.random.randint(0, N, size=1)[0]
     elif np.size(i) > 1:
         list_i = i
+        n = np.size(i)
         r, c = auto_row_col(n)
         h_fig, h_axes = plt.subplots(r, c)
         h_axes = np.ravel(h_axes)

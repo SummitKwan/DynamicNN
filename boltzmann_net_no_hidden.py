@@ -68,6 +68,7 @@ class BoltzmannNetNoHidden:
         n, m = X.shape
         num_batch = n//batchsize
         tic = time.time()
+        # self.train_cost = {t: []; cost: []}
         for i_batch in range(num_batch):
             self.train_batch(X[i_batch*batchsize : i_batch*batchsize+batchsize], lr=lr, steps_negstats=steps_negstats)
             if yn_verbose and i_batch%batches_per_print==0:

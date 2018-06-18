@@ -43,12 +43,13 @@ class RestrictedBoltzmannMachine:
         self.W = np.random.randn(*[m1, m2]) * 0.001
 
 
-    def cal_energy(self, X, Y=None):
+    def cal_energy(self, X, Y=None, batchsize=128):
         """
         compute energy
         :param X:  data, shape=[num_data, num_neurons]
         :return:   energy of hopfield model, shape=[num_data]
         """
+
         if Y is None:
             Y = self.compute_p_y_given_x(X)
         energy = -np.sum(X*self.b1,  axis=1) - np.sum(Y*self.b2, axis=1) \
@@ -95,11 +96,9 @@ class RestrictedBoltzmannMachine:
                 direction = 'YX'
             else:
                 direction = 'XY'
+        X_orignal = X
         pX = None
         pY = None
-
-        # if mask_update is None:
-        #     mask_update = np.ones(X.shape).astype('bool')
 
         for iter in range(num_steps):
             if direction == 'XY':
@@ -109,12 +108,14 @@ class RestrictedBoltzmannMachine:
             elif direction == 'YX':
                 pX = self.compute_p_x_given_y(Y)
                 X = bernoulli_sample(pX)
+                if mask_update is not None:
+                    X = np.where(mask_update, X, X_orignal)
                 direction = 'XY'
 
         return (X, Y), (pX, pY)
 
 
-    def train(self, X, lr=0.001, steps_negstats=1, batchsize=50, yn_verbose=False, batches_per_print=100):
+    def train(self, X, lr=0.001, steps_negstats=1, batchsize=64, yn_verbose=False, batches_per_print=100):
         """ training using contrastive divergence algorithm, wrapper of self.train_batch() """
         n = X.shape[0]
         num_batch = n//batchsize
@@ -204,7 +205,6 @@ class RestrictedBoltzmannMachine:
         :return:
         """
 
-        # todo: compatability
         if filepathname is not None:
             filedir, basename = os.path.split(filepathname)
             filename, fileext = os.path.splitext(basename)

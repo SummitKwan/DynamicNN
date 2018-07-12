@@ -1,4 +1,4 @@
-import boltzmann_net_no_hidden
+from EBMs_numpy import boltzmann_net_no_hidden
 import importlib
 importlib.reload(boltzmann_net_no_hidden)
 

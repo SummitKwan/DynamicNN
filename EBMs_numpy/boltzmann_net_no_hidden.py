@@ -105,7 +105,7 @@ class BoltzmannNetNoHidden:
 
 
     def save_parameters(self, filepathname=None,
-                   filedir='./model_save', filename=modelname, fileext='.h5', auto_timecode=True):
+                   filedir='../model_save', filename=modelname, fileext='.h5', auto_timecode=True):
         """
         save model parameters to a hdf5 (h5) or pickle (pkl) file
         :param filepathname:  the complete file path and name of the file to store,
@@ -145,7 +145,7 @@ class BoltzmannNetNoHidden:
 
 
     def load_parameters(self, filepathname=None,
-                   filedir='./model_save', filename=modelname, fileext='.h5', find_last=True):
+                   filedir='../model_save', filename=modelname, fileext='.h5', find_last=True):
         """
         save model parameters to a hdf5 (h5) or pickle (pkl) file
         :param filepathname: the complete file path and name of the file to store,

@@ -12,15 +12,10 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import re
-import sys
-import tarfile
-import numpy as np
 
-from six.moves import urllib
 import tensorflow as tf
 
-import cifar10_input
+from demo_script import cifar10_input
 
 # get current directory
 cur_dir = os.path.dirname( __file__) if '__file__' in locals() else '.'
@@ -72,7 +67,7 @@ def distorted_inputs():
     """
     data_dir_full = os.path.join(data_dir, 'cifar-10-batches-bin')
     images, labels = cifar10_input.distorted_inputs(data_dir=data_dir_full,
-                                                  batch_size=batch_size)
+                                                    batch_size=batch_size)
     if use_fp16:
     images = tf.cast(images, tf.float16)
     labels = tf.cast(labels, tf.float16)
@@ -94,8 +89,8 @@ def inputs(eval_data):
     """
     data_dir_full = os.path.join(data_dir, 'cifar-10-batches-bin')
     images, labels = cifar10_input.inputs(eval_data=eval_data,
-                                        data_dir=data_dir_full,
-                                        batch_size=batch_size)
+                                          data_dir=data_dir_full,
+                                          batch_size=batch_size)
     if use_fp16:
     images = tf.cast(images, tf.float16)
     labels = tf.cast(labels, tf.float16)

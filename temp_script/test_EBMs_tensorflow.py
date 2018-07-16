@@ -17,35 +17,59 @@ importlib.reload(EBMs_tensorflow)
 
 ##
 
-importlib.reload(EBMs_tensorflow.ebm)
-importlib.reload(EBMs_tensorflow.rbm)
-importlib.reload(EBMs_tensorflow)
-
-
 m0, m1 = 784, 512
 batchsize = 32
-
-model = EBMs_tensorflow.rbm.RestrictedBoltzmannMachine(m0, m1, batchsize=batchsize)
 
 n_total = X_dtr.shape[0]
 x_in = X_dtr[:32]
 
 
 ##
-num_epochs = 10
+importlib.reload(EBMs_tensorflow.ebm)
+importlib.reload(EBMs_tensorflow.rbm)
+importlib.reload(EBMs_tensorflow)
+model = EBMs_tensorflow.rbm.RestrictedBoltzmannMachine(m0, m1, batchsize=batchsize, path_log_dir='./model_log')
+
+model.init_graph()
+model.create_training_graph()
+
+##
+""" design computational graph """
+
+with model.graph.as_default():
+
+    # define computational graph
+    x0_in = model.tensors['x0_in']
+
+    op_cd = model.contrastive_divergence(x0=x0_in)
+
+    op_energy = model.cal_energy(x0=x0_in)
+
+    p1 = model.cal_p1_given_x0(x0_in)
+
+    gibbs_outcome = model.gibbs_sample(x0_in, num_steps=10)
+
+    with tf.name_scope('summary'):
+        tf.summary.histogram('b0', model.tensors['b0'])
+        tf.summary.histogram('b1', model.tensors['b1'])
+        tf.summary.histogram('w', model.tensors['w'])
+        tf.summary.histogram('p1', p1)
+        merged_summary = tf.summary.merge_all()
+
+
+##
+""" train model """
+
+num_epochs = 1
 steps_check = 100
 toc = time.time()
 index_data_shuffle = np.arange(n_total)
-yn_load_file = False
+yn_load_file = True
 yn_save_file = False
 yn_refresh_dict_params = False
 model.lr = 0.003
 
 with tf.Session(graph=model.graph) as session:
-
-    x0_in = model.tensors['x0_in']
-    op_cd = model.contrastive_divergence(x0=x0_in)
-    op_energy = model.cal_energy(x0=x0_in)
 
     tf.global_variables_initializer().run()
 
@@ -67,27 +91,52 @@ with tf.Session(graph=model.graph) as session:
                 index_data_shuffle = np.random.permutation(n_total)
 
             if i_batch % steps_check == 0:
-                cur_energy = session.run(op_energy, feed_dict={x0_in: x_batch})
+                cur_energy, summary_out = session.run([op_energy, merged_summary], feed_dict={x0_in: x_batch})
                 tic, toc = toc, time.time()
                 time_per_batch = (toc - tic) / steps_check
+                with tf.summary.FileWriter('./model_log') as writer:
+                    writer.add_summary(summary_out)
                 print('step={:>4}_{:>5}, energy={:>+.5}, sec/batch={:>.4}, ms/sample={:.4}'.format(
                     i_loop, i_batch, np.mean(cur_energy), time_per_batch, time_per_batch/model.batchsize*1000))
 
             session.run(op_cd, feed_dict={x0_in: x_batch})
 
     model.params_tensor_to_dict()
-    print(np.std(model.dict_params['w']))
 
     if yn_save_file:
         model.write_parameters(model.dict_params, filedir='./model_save', filename='RBM_tf')
 
+    with tf.summary.FileWriter('./model_log') as writer:
+        writer.add_graph(model.graph)
+
+
 ##
-""" try tensorboard """
+""" test reconstruction """
 
-writer = tf.summary.FileWriter('./model_log')
-writer.add_graph(model.graph)
+yn_load_file = False
+i_batch = 0
+x_batch = X_dtr[index_data_shuffle[i_batch*model.batchsize: (i_batch+1)*model.batchsize]]
 
-model.graph
+with tf.Session(graph=model.graph) as session:
+
+    with tf.summary.FileWriter('./model_log') as writer:
+        writer.add_graph(session.graph)
+
+    tf.global_variables_initializer().run()
+
+    if yn_load_file:
+        model.load_parameters(filedir='./model_save', filename='RBM_tf')
+
+    model.params_dict_to_tensor()
+
+    gibss_result = session.run(gibbs_outcome, feed_dict={x0_in: x_batch})
+
+##
+
+
+utils.data_plot(gibss_result[1], n=10)
+
+utils.data_plot(model.dict_params['w'][:, :10].transpose(), n=10)
 
 ##
 

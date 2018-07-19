@@ -34,6 +34,19 @@ model.init_graph()
 model.create_training_graph()
 
 ##
+""" train model """
+
+model.run_training(x0_data=X_dtr, num_epochs=20)
+
+
+##
+""" test model """
+
+
+
+##
+""" below is legacy code """
+
 """ design computational graph """
 
 with model.graph.as_default():
@@ -57,7 +70,7 @@ with model.graph.as_default():
         merged_summary = tf.summary.merge_all()
 
 
-##
+
 """ train model """
 
 num_epochs = 1
@@ -80,6 +93,11 @@ with tf.Session(graph=model.graph) as session:
         model.init_dict_params()
 
     model.params_dict_to_tensor()
+    x0_in = model.tensors['x0_in']
+    op_energy = model.tensors['energy']
+    op_cd = model.tensors['cd']
+    merged_summary = model.tensors['merged_summary']
+
 
     print(np.std(model.dict_params['w']))
 

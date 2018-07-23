@@ -16,7 +16,7 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
     def __init__(self,
                  m0,             # num of visible layer units
                  m1,             # num of hidden  layer units
-                 batchsize=32,   # batchsize
+                 batchsize=32,   # batchsize, if None, do not use mini-batch
                  lr=0.01,        # learning rate
                  wd_l2=0.0001,   # weight decay, L2 loss
                  momentum=None,  # momentum
@@ -74,12 +74,9 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
         """
 
         m0, m1 = self.M             # network size
-        batchsize = self.batchsize  # batch size
 
         # create tensors
         with self.graph.as_default():
-            # place holder
-            x0_in = tf.placeholder(shape=[batchsize, m0], name='x0_in', dtype=tf.float32)
 
             # variables
             b0 = tf.Variable(self.dict_params['b0'], name='b0', dtype='float32')
@@ -93,16 +90,17 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
                     grad_b1 = tf.Variable(self.dict_params['b1']*0, name='gard_b1', dtype='float32')
                     grad_w  = tf.Variable(self.dict_params['w']*0,  name='gard_w',  dtype='float32')
 
-            # initializer
-            var_init = tf.global_variables_initializer()
 
             with tf.name_scope('var_update'):
                 var_update = dict()
                 for key in ['b0', 'b1', 'w']:
                     var_update[key] = tf.assign(locals()[key], self.dict_params[key])
 
+            # initializer
+            var_init = tf.global_variables_initializer()
+
         # store to self.tensors
-        for tensor_name in ['x0_in', 'b0', 'b1', 'w', 'var_init', 'var_update'] + \
+        for tensor_name in ['b0', 'b1', 'w', 'var_init', 'var_update'] + \
                            ([] if self.momentum is None else ['grad_b0', 'grad_b1', 'grad_w']):
             self.tensors[tensor_name] = locals()[tensor_name]
 
@@ -195,7 +193,7 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
     def sample_x(self, p):
         """ bernoulli sampling process, does not change the shape of input p """
         with tf.name_scope('bernoulli_sample'):
-            sample_shape = p.shape
+            sample_shape = p.get_shape()
             x = tf.where(p > tf.random_uniform(sample_shape),
                          tf.ones(sample_shape), tf.zeros(sample_shape))
         return x
@@ -231,8 +229,8 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
             x1_sample = self.sample_x(p1_sample)
 
             if (self.clamp is not None) and ('x1' in self.clamp):
-                x1_sample = tf.where(self.clamp['x1'][None, :]*np.ones(self.batchsize, dtype=bool)[:, None],
-                                     x1, x1_sample)
+                clamp = tf.constant(self.clamp['x1'][None, :], dtype=tf.float32)
+                x1_sample = clamp * x1 + (1 - clamp) * x1_sample
 
         return p0_sample, x0_sample, p1_sample, x1_sample
 
@@ -245,8 +243,8 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
             x0_sample = self.sample_x(p0_sample)
 
             if (self.clamp is not None) and ('x0' in self.clamp):
-                x0_sample = tf.where(self.clamp['x0'][None, :]*np.ones(self.batchsize, dtype=bool)[:, None],
-                                     x0, x0_sample)
+                clamp = tf.constant(self.clamp['x0'][None, :], dtype=tf.float32)
+                x0_sample = clamp * x0 + (1-clamp) * x0_sample
 
         return p0_sample, x0_sample, p1_sample, x1_sample
 
@@ -287,7 +285,7 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
         return p0_sample, x0_sample, p1_sample, x1_sample
 
     def contrastive_divergence(self, x0):
-        """ constrastive divergence step """
+        """ constrastive divergence algorithm for training  """
 
         with tf.name_scope('CD'):
 
@@ -330,12 +328,12 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
                     for key in ['b0', 'b1', 'w']:   # update variables
                         update_all[key] = tf.assign_add(self.tensors[key],
                                                         self.lr*self.tensors['grad_'+key] - self.wd_l2*self.tensors[key])
-        print(update_all)
+
         return update_all
 
     """ ----- functions related creating computational graph -----"""
     def init_graph(self):
-        """ clear entire graph and put back x0_in, b0, b1, w """
+        """ clear entire graph and put back tf variables like b0, b1, w """
 
         tf.reset_default_graph()
         self.graph = tf.Graph()
@@ -357,20 +355,41 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
 
         with self.graph.as_default():
 
+            x0_data = tf.placeholder(dtype=tf.float32, shape=[None, self.M[0]])
+            with tf.name_scope('data_handler'):
+                # data pipeline
+                if self.batchsize is not None:   # use data handler, every time get one batch of data
+                        ds = tf.data.Dataset.from_tensor_slices(x0_data)
+                        ds = ds.repeat().batch(self.batchsize).shuffle(buffer_size=1000)  # circular, batched, shuffled
+                        ds = ds.prefetch(self.batchsize)
+                        iterator = ds.make_initializable_iterator()
+                        x0_in = iterator.get_next()
+                        x0_in.set_shape([self.batchsize, None])
+
+                        self.tensors['iter_init'] = iterator.initializer
+
+                else:                     # do not use data handler, everytime get the full dataset
+                    # place holder
+                    x0_in = x0_data + 0
+
             # define computational graph
-            x0_in = self.tensors['x0_in']
             cd = self.contrastive_divergence(x0=x0_in)
             energy = self.cal_energy(x0=x0_in)
 
             # add summery node
             with tf.name_scope('summary'):
-                tf.summary.histogram('b0', self.tensors['b0'])
-                tf.summary.histogram('b1', self.tensors['b1'])
-                tf.summary.histogram('w', self.tensors['w'])
+                with tf.name_scope('var'):
+                    for key in ['b0', 'b1', 'w']:
+                        if key in self.tensors:
+                            tf.summary.histogram(key, self.tensors[key])
+                with tf.name_scope('grad'):
+                    for key in ['grad_b0', 'grad_b1', 'grad_w']:
+                            if key in self.tensors:
+                                    tf.summary.histogram(key, self.tensors[key])
                 merged_summary = tf.summary.merge_all()
 
         # include tenstors in model object
-        for tensor_name in ['cd', 'energy', 'merged_summary']:
+        for tensor_name in ['cd', 'energy', 'merged_summary', 'x0_data']:
             self.tensors[tensor_name] = locals()[tensor_name]
 
         # add graph to tensorboard
@@ -382,17 +401,34 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
         """ create inference graph """
 
         with self.graph.as_default():
+
+            x0_data = tf.placeholder(dtype=tf.float32, shape=[None, self.M[0]])
+
+            # data pipeline
+            with tf.name_scope('data_handler'):
+                if self.batchsize is not None:  # use data handler, every time get one batch of data
+                    ds = tf.data.Dataset.from_tensor_slices(x0_data)
+                    ds = ds.repeat().batch(self.batchsize)    # circular, batched
+                    ds = ds.prefetch(self.batchsize)
+                    iterator = ds.make_initializable_iterator()
+                    x0_in = iterator.get_next()
+                    x0_in.set_shape([self.batchsize, None])
+
+                    self.tensors['iter_init'] = iterator.initializer
+                else:                           # do not use data handler, everytime get the full dataset
+                    x0_in = x0_data + 0
+
             # define computational graph
-            x0_in = self.tensors['x0_in']
             energy = self.cal_energy(x0=x0_in)
             p0, x0, p1, x1 = self.gibbs_sample(x0=x0_in, num_steps=num_steps)
 
         # include tenstors in model object
-        response = {}
+        activity = {}
         for tensor_name in ['p0', 'x0', 'p1', 'x1']:
-            response[tensor_name] = locals()[tensor_name]
-        self.tensors['response'] = response
-        self.tensors['energy'] = energy
+            activity[tensor_name] = locals()[tensor_name]
+
+        for tensor_name in ['activity', 'energy', 'x0_data']:
+            self.tensors[tensor_name] = locals()[tensor_name]
 
         # add graph to tensorboard
         self.tensorboard_include_graph()
@@ -415,83 +451,98 @@ class RestrictedBoltzmannMachine(EnergyBasedModel):
         :return:
         """
 
-        n_total = x0_data.shape[0]
+        n_data = x0_data.shape[0]
+        batchsize = self.batchsize
+        step_per_epoch = 1.0 * n_data / batchsize if (batchsize is not None) else 1
+        n_step = int(num_epochs * step_per_epoch)
+
         toc = time.time()
-        index_data_shuffle = np.arange(n_total)
 
         with tf.Session(graph=self.graph) as session:
+
+            self.tensorboard_include_graph()
 
             self.tensors['var_init'].run()
 
             self.params_dict_to_tensor()
-            x0_in = self.tensors['x0_in']
+
+            feed_dict = {self.tensors['x0_data']: x0_data}
             op_energy = self.tensors['energy']
             op_cd = self.tensors['cd']
             merged_summary = self.tensors['merged_summary']
 
-            with tf.summary.FileWriter(self.path_log_dir) as writer:
-                writer.add_graph(self.graph)
+            self.tensors['iter_init'].run(feed_dict=feed_dict)
 
-            for i_loop in range(num_epochs):
-                for i_batch in range(n_total // self.batchsize - 1):
-                    x_batch = x0_data[index_data_shuffle[i_batch * self.batchsize: (i_batch + 1) * self.batchsize]]
+            for i_step in range(n_step):
+                if i_step % steps_check == 0:
+                    _, cur_energy, summary_out = session.run([op_cd, op_energy, merged_summary], feed_dict=feed_dict)
+                    tic, toc = toc, time.time()
+                    time_per_batch = (toc - tic) / steps_check
+                    print('step={:>4}_{:>6}, energy={:>+.5}, sec/batch={:>.4}, ms/sample={:.4}'.format(
+                        int(i_step/step_per_epoch), i_step, np.mean(cur_energy),
+                        time_per_batch, time_per_batch / batchsize * 1000))
+                    with tf.summary.FileWriter(self.path_log_dir) as writer:
+                        writer.add_summary(summary_out)
+                    self.params_tensor_to_dict()
+                else:
+                    session.run(op_cd, feed_dict=feed_dict)
 
-                    if i_batch == 0:
-                        index_data_shuffle = np.random.permutation(n_total)
+            self.params_tensor_to_dict()
 
-                    if i_batch % steps_check == 0:
-                        cur_energy, summary_out = session.run([op_energy, merged_summary], feed_dict={x0_in: x_batch})
-                        tic, toc = toc, time.time()
-                        time_per_batch = (toc - tic) / steps_check
-                        with tf.summary.FileWriter(self.path_log_dir) as writer:
-                            writer.add_summary(summary_out)
-                        print('step={:>4}_{:>5}, energy={:>+.5}, sec/batch={:>.4}, ms/sample={:.4}'.format(
-                            i_loop, i_batch, np.mean(cur_energy), time_per_batch,
-                            time_per_batch / self.batchsize * 1000))
-
-                    session.run(op_cd, feed_dict={x0_in: x_batch})
-
-                self.params_tensor_to_dict()
-
-            with tf.summary.FileWriter(self.path_log_dir) as writer:
-                writer.add_graph(self.graph)
+        self.tensorboard_include_graph()
 
         return None
 
     """ run_reconstruction """
 
-    def run_inference(self, x0_data,
-                     num_iter = 1,
-                     ):
-        """ run gibbs sampleing """
+    def run_inference(self, x0_data, num_iter=1, yn_keep_history=False):
+        """
+        run gibbs sampleing
 
-        n_total = x0_data.shape[0]
+        :param x0_data:    initial x0 input
+        :param num_iter:   num of iterations for a sample
+        :param iter_per_sample:
+        :return:
+        """
 
-        result = {'p0': np.zeros([n_total, self.M[0]]),
-                  'x0': np.zeros([n_total, self.M[0]]),
-                  'p1': np.zeros([n_total, self.M[1]]),
-                  'x1': np.zeros([n_total, self.M[1]]),
-                  'energy': np.zeros(n_total)}
+        n_valid = x0_data.shape[0]
+        n_batch, remainder = divmod(n_valid, self.batchsize)
+        n_batch = n_batch + (1 if remainder>0 else 0)
+        n_total = n_batch * self.batchsize
+
+        result = {'p0': np.zeros([n_total, self.M[0], num_iter]),
+                  'x0': np.zeros([n_total, self.M[0], num_iter]),
+                  'p1': np.zeros([n_total, self.M[1], num_iter]),
+                  'x1': np.zeros([n_total, self.M[1], num_iter]),
+                  'energy': np.zeros([n_total, num_iter])}
 
         with tf.Session(graph=self.graph) as session:
+
+            self.tensorboard_include_graph()
 
             self.tensors['var_init'].run()
 
             self.params_dict_to_tensor()
-            x0_in = self.tensors['x0_in']
 
-            for i_batch in range(n_total // self.batchsize):
+            for i_iter in range(num_iter):
+                if i_iter == 0:
+                    feed_dict = {self.tensors['x0_data']: x0_data}
+                else:
+                    feed_dict = {self.tensors['x0_data']: result['p0'][:, :, i_iter-1]}
+                self.tensors['iter_init'].run(feed_dict)
 
-                x_batch = x0_data[i_batch*self.batchsize: (i_batch+1)*self.batchsize]
+                for i_batch in range(n_total // self.batchsize):
+                    [activity_cur, energy_cur] = session.run([self.tensors['activity'], self.tensors['energy']],
+                                                             feed_dict=feed_dict)
+                    for key in ['p0', 'x0', 'p1', 'x1']:
+                        result[key][i_batch*self.batchsize: (i_batch+1)*self.batchsize, :, i_iter] = activity_cur[key]
+                    result['energy'][i_batch*self.batchsize: (i_batch+1)*self.batchsize, i_iter] = energy_cur
 
-                response_batch = session.run(self.tensors['response'], feed_dict={x0_in: x_batch})
-                energy_batch = session.run(self.tensors['energy'], feed_dict={x0_in: x_batch})
+        result = {key: result[key][:n_valid] for key in result}
 
-                for key in ['p0', 'x0', 'p1', 'x1']:
-                    result[key][i_batch*self.batchsize: (i_batch+1)*self.batchsize, :] = response_batch[key]
-                result['energy'][i_batch*self.batchsize: (i_batch+1)*self.batchsize] = energy_batch
-
-            with tf.summary.FileWriter(self.path_log_dir) as writer:
-                writer.add_graph(self.graph)
+        if not yn_keep_history:
+            result_last = {key: result[key][:n_valid, :, -1] for key in ('p0', 'x0', 'p1', 'x1')}
+            result_last['energy'] = result['energy'][:, -1]
+            result = result_last
 
         return result

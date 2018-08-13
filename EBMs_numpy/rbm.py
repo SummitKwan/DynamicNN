@@ -77,7 +77,7 @@ class RestrictedBoltzmannMachine:
         return sigmoid_fun(np.sum(Y[:, None, :] * self.W[None, :, :], axis=2) + self.b1)
 
 
-    def inference(self, X=None, Y=None, mask_update=None, num_steps=1, direction='auto'):
+    def inference(self, X=None, Y=None, mask_update=None, num_steps=1, direction='auto', proportion_original=None):
         """
         evolve to a steady state using MCMC
         :param X:  data, shape=[num_data, num_neurons]
@@ -110,6 +110,8 @@ class RestrictedBoltzmannMachine:
                 X = bernoulli_sample(pX)
                 if mask_update is not None:
                     X = np.where(mask_update, X, X_orignal)
+                if proportion_original is not None:
+                    X = (1-proportion_original) * X + proportion_original * X_orignal
                 direction = 'XY'
 
         return (X, Y), (pX, pY)

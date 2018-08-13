@@ -114,7 +114,7 @@ def data_ravel(X_img):
     return X
 
 
-def data_plot(X, Y=None, i=None, n=None):
+def data_plot(X, Y=None, i=None, n=None, yn_random=True):
     """
     plot a sample of data
 
@@ -129,7 +129,10 @@ def data_plot(X, Y=None, i=None, n=None):
     dimX = len(X.shape)
 
     if n is not None:
-        i = np.random.randint(0, N, size=n)
+        if yn_random:
+            i = np.random.randint(0, N, size=n)
+        else:
+            i = np.arange(n)
 
     if i is None:
         i = np.random.randint(0, N, size=1)[0]
@@ -138,6 +141,7 @@ def data_plot(X, Y=None, i=None, n=None):
         n = np.size(i)
         r, c = auto_row_col(n)
         h_fig, h_axes = plt.subplots(r, c)
+        plt.subplots_adjust(wspace=0.05, hspace=0.05)
         h_axes = np.ravel(h_axes)
         for i_plot, i in enumerate(list_i):
             plt.axes(h_axes[i_plot])
@@ -285,4 +289,25 @@ def imshow_fast_subplot(data_list, layout=None, gap = 0.05,
     plt.axis('off')
 
 
+def gen_distinct_colors(n, luminance=0.9, alpha=0.8, style='discrete', cm='rainbow'):
+    """
+    tool funciton to generate n distinct colors for plotting
 
+    :param n:          num of colors
+    :param luminance:  num between [0,1]
+    :param alhpa:      num between [0,1]
+    :param style:      sting, 'discrete', or 'continuous'
+    :param cm:      sting, 'discrete', or 'continuous'
+    :return:           n*4 rgba color matrix
+    """
+
+    assert style in ('discrete', 'continuous')
+    colormap = getattr(plt.cm, cm)
+    if style == 'discrete':
+        magic_number = 0.618  # from the golden ratio, to make colors evely distributed
+        initial_number = 0.25
+        colors_ini = colormap((initial_number + np.arange(n)) * magic_number % 1)
+    else:    # style == 'continuous':
+        colors_ini = colormap( 1.0*np.arange(n)/(n-0.5) )
+
+    return colors_ini* np.array([[luminance, luminance, luminance, alpha]])

@@ -340,14 +340,36 @@ for i_focus, focus in enumerate(['all', 'nov', 'fam']):
     plt.axes(h_axes[0, i_focus])
     plt.title('ave_activity_{}'.format(focus))
     for i_cdtn, cdtn in enumerate(list_cdtn):
-        plt.plot(res_dyn_cdtn[cdtn][1].mean(axis=(0, 1)), label=cdtn,
-                 linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=3, alpha=focus_case[focus][i_cdtn])
+        trace_N = res_dyn_cdtn[cdtn][1].shape[1]
+        trace_mean = res_dyn_cdtn[cdtn][1].mean(axis=1).mean(axis=0)
+        trace_se = res_dyn_cdtn[cdtn][1].mean(axis=1).std(axis=0) / np.sqrt(trace_N)
+        trace_x = np.arange(len(trace_mean))
+        se_scale = 2
+
+        plt.fill_between(trace_x, trace_mean - se_scale * trace_se, trace_mean + se_scale * trace_se,
+                         color=colors[i_cdtn], alpha=focus_case[focus][i_cdtn]*0.25)
+        plt.plot(trace_mean, label=cdtn,
+                 linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=2, alpha=focus_case[focus][i_cdtn])
+
+        # plt.plot(res_dyn_cdtn[cdtn][1].mean(axis=(0, 1)), label=cdtn,
+        #          linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=3, alpha=focus_case[focus][i_cdtn])
 
     plt.axes(h_axes[1, i_focus])
     plt.title('energy_{}'.format(focus))
     for i_cdtn, cdtn in enumerate(list_cdtn):
-        plt.plot(res_dyn_cdtn[cdtn][2].mean(axis=0), label=cdtn,
-                 linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=3, alpha=focus_case[focus][i_cdtn])
+        trace_N = res_dyn_cdtn[cdtn][2].shape[1]
+        trace_mean = res_dyn_cdtn[cdtn][2].mean(axis=0)
+        trace_se = res_dyn_cdtn[cdtn][2].std(axis=0) / np.sqrt(trace_N)
+        trace_x = np.arange(len(trace_mean))
+        se_scale = 2
+
+        plt.fill_between(trace_x, trace_mean - se_scale * trace_se, trace_mean + se_scale * trace_se,
+                         color=colors[i_cdtn], alpha=focus_case[focus][i_cdtn]*0.25)
+        plt.plot(trace_mean, label=cdtn,
+                 linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=2, alpha=focus_case[focus][i_cdtn])
+
+        # plt.plot(res_dyn_cdtn[cdtn][2].mean(axis=0), label=cdtn,
+        #          linestyle=linestyles[i_cdtn], color=colors[i_cdtn], linewidth=3, alpha=focus_case[focus][i_cdtn])
 
 plt.axes(h_axes[0, 0])
 plt.ylim(0.25, 0.5)
